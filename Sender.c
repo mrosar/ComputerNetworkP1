@@ -12,7 +12,7 @@ int equal(char *string1, char *string2)
 	int stop =0;
 	while(stop!=1)
 	{
-		if(string1[i]!='/0' && string2[i]!='/0')
+		if(string1[i]!='\0' && string2[i]!='\0')
 		{
 			if(string1[i]!=string2[i])
 			{
@@ -23,7 +23,7 @@ int equal(char *string1, char *string2)
 				i++;
 			}
 		}
-		else if(string1[i]=='/0' && string2[i]=='/0' && stop==0)
+		else if(string1[i]=='\0' && string2[i]=='\0' && stop==0)
 		{
 			return 0;
 		}
@@ -33,11 +33,42 @@ int equal(char *string1, char *string2)
 
 int main(int argc, char *argv[])
 {
-	int sber,splr,delay;
-	char *filename;
-	for(int i; i<argc;i++)
+	int sber=0,splr=0,delay=100;
+	char *filename=NULL;
+	char *hostname=NULL;
+	char *next;
+	int port;
+	int i;
+	for(i=1; i<argc;i++)
 	{
-		if(
+		if(equal(argv[i],"--file"))
+		{
+			i++;
+			filename = argv[i];
+		}
+		else if(equal(argv[i],"--sber"))
+		{
+			i++;
+			sber= strtol(argv[i],&next, 10);
+		}
+		else if(equal(argv[i],"--splr"))
+		{
+			i++;
+			splr=strtol(argv[i],&next, 10);
+		}
+		else if(equal(argv[i],"--delay"))
+		{
+			i++;
+			delay=strtol(argv[i],&next, 10);
+		}
+		else if(i==argc-2)
+		{
+			hostname = argv[i];
+		}
+		else if(i==argc-1)
+		{
+			port =strtol(argv[i],&next, 10);
+		}
 	}
 	char *name = argv[1];
 	int sock;
