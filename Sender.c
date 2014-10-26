@@ -6,6 +6,16 @@
 #include <unistd.h>
 #include <string.h>
 
+struct packet {
+uint8_t type : 3;
+uint8_t window : 5;
+uint8_t seqNum;
+uint16_t length;
+char payload[512];
+uint32_t crc;
+} __attribute__((packed));
+
+
 int equal(char *string1, char *string2)
 {
 	int i = 0;
@@ -35,10 +45,12 @@ int main(int argc, char *argv[])
 {
 	int sber=0,splr=0,delay=100;
 	char *filename=NULL;
-	char *hostname=NULL;
+	char *hostname;
 	char *next;
-	int port;
+	char *port;
 	int i;
+	uint16_t seq =1;
+	
 	for(i=1; i<argc;i++)
 	{
 		if(equal(argv[i],"--file"))
@@ -67,10 +79,10 @@ int main(int argc, char *argv[])
 		}
 		else if(i==argc-1)
 		{
-			port =strtol(argv[i],&next, 10);
+			port =argv[i];
 		}
 	}
-	char *name = argv[1];
+	
 	int sock;
 	
 	struct addrinfo hints;
@@ -84,16 +96,16 @@ int main(int argc, char *argv[])
     hints.ai_addr = NULL;
     hints.ai_next = NULL;
 
-	int ip = getaddrinfo(NULL,name,&hints,&listAddr);
+	int ip = getaddrinfo(NULL,hostname,&hints,&listAddr);
 
 	for(res = listAddr; res !=NULL; res = res->ai_next)
 	{
 		if ((sock = socket(res->ai_family, res->ai_socktype,
             res->ai_protocol)) != -1)
             {
-            	if (bind(sock, res->ai_addr, res->ai_addrlen) == 0)
+            	if (connect(sock, res->ai_addr, res->ai_addrlen) == 0)
             	{
-            		// If we get there, bind succeded
+            		// If we get there, connect succeded
             		break;
             	}
     		}
@@ -104,12 +116,46 @@ int main(int argc, char *argv[])
 	
 	if (res == NULL)
 	{
-		fprintf(stderr,"Binding failed");
+		fprintf(stderr,"Connection failed");
 	}
 	
 	freeaddrinfo(listAddr);
 	
+	FILE *fichier = fopen(filename,"r");
+	int current = 1;
+	int data;
+	int j=0;
+	
+	struct packet *p = malloc(sizeof(struct packet));
+	p->type = 1;
+	p->window = 0;
+	p->seqNum = seq;
+	p->length = 0;
+	
+	while (current>0)
+	{
+		if(j<512)
+		{
+			current = fread(p->payload,sizeof(char),1,fichier);
+			p->length++;
+			j++;
+		}
+		else
+		{
 
+			sendto(sock, p, (8+p->length)*8 , 0, 
+       res->ai_addr, sizeof res->ai_addr);
+			// créer un nouveau
+		}
+	}
+	
+	if(j!=0)
+	{
+		// si le dernier packet n'est pas vide, envoyer le paquet final
+	}
+	fclose(fichier);
+	
+	
 }
 
 
