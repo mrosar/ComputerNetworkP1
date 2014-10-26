@@ -15,6 +15,17 @@ char payload[512];
 uint32_t crc;
 } __attribute__((packed));
 
+void producePacket (struct packet *p)
+{
+	p->type = 1;
+	p->window = 0;
+	p->seqNum = seq;
+	seq++;
+	p->length = 0;
+	
+	// compute CRC
+}
+
 int main(int argc, char *argv[])
 {
 	char *filename=NULL;

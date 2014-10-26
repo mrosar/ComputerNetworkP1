@@ -15,6 +15,7 @@ char payload[512];
 uint32_t crc;
 } __attribute__((packed));
 
+uint16_t seq =1;
 
 int equal(char *string1, char *string2) // retourne 0 si deux tableaux de char sont égaux ou retourne 1 sinon
 {
@@ -41,6 +42,25 @@ int equal(char *string1, char *string2) // retourne 0 si deux tableaux de char s
 	return 1;
 }
 
+void producePacket (FILE *fichier, struct packet *p, int *current)
+{
+	p->type = 1;
+	p->window = 0;
+	p->seqNum = seq;
+	seq++;
+	p->length = 0;
+	while (*current !=0 && p->length<=512)
+	{
+		if(p->length<=512) // if packet contains empty slot(s), fill with a byte
+		{
+			*current = fread(p->payload,sizeof(char),1,fichier);
+			p->length++;
+		}
+	}
+	
+	// compute CRC
+}
+
 int main(int argc, char *argv[])
 {
 	int sber=0,splr=0,delay=100;
@@ -49,7 +69,6 @@ int main(int argc, char *argv[])
 	char *next;
 	char *port;
 	int i;
-	uint16_t seq =1;
 	
 	if(argc<3)
 	{
@@ -134,37 +153,18 @@ int main(int argc, char *argv[])
 	freeaddrinfo(listAddr);
 	
 	FILE *fichier = fopen(filename,"r");
-	int current = 1;
 	
-	// new packet
-	struct packet *p = (struct packet*) malloc(sizeof(struct packet));
-	p->type = 1;
-	p->window = 0;
-	p->seqNum = seq;
-	p->length = 0;
+	int *current = (int*) malloc(sizeof(int));
+	*current = 1;
 	
-	while (current>0)
+	while(current>0)
 	{
-		if(p->length<=512) // if packet contains empty slot(s), fill with a byte
-		{
-			current = fread(p->payload,sizeof(char),1,fichier);
-			p->length++;
-		}
-		else // else try to send a packet and create a new one to fill
-		{
-			sendto(sock, p, (8+p->length)*8 , 0, res->ai_addr, sizeof (res->ai_addr));
-			free(p);
-			p = (struct packet*) malloc(sizeof(struct packet));
-			seq++;
-			p->type = 1;
-			p->window = 0;
-			p->seqNum = seq;
-			p->length = 0;
-		}
+		struct packet *p = (struct packet*) malloc(sizeof(struct packet));
+		producePacket(fichier,p,current);
+		sendto(sock, p, (8+p->length)*8 , 0, res->ai_addr, sizeof (res->ai_addr));
+		free(p);
 	}
-	
-	// send a last packet ( empty or not ) to end the transfer
-	sendto(sock, p, (8+p->length)*8 , 0, res->ai_addr, sizeof (res->ai_addr));
+
 	free(p);
 	
 	// close file opened and socket fd
