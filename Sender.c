@@ -156,21 +156,42 @@ int main(int argc, char *argv[])
 	
 	int *current = (int*) malloc(sizeof(int));
 	*current = 1;
+	int firstpacket =1;
+	struct packet bufferPackets[31]; // buffer filled with packets sent
+	struct packet *lastAck = (struct packet*) malloc(sizeof(struct packet)); // last ack received
+	int j=0;
 
 	while(current>0)
 	{
-		struct packet *p = (struct packet*) malloc(sizeof(struct packet));
-		producePacket(fichier,p,current);
-		sendto(sock, p, (8+p->length)*8 , 0, res->ai_addr, sizeof (res->ai_addr));
-		free(p);
+		if (firstpacket==1) // first packet "probe"
+		{
+			producePacket(fichier,&bufferPackets[j],current);
+			sendto(sock, &bufferPackets[j], (8+bufferPackets[j].length)*8 , 0, res->ai_addr, sizeof (res->ai_addr)); // send first packet
+			
+			recvfrom(sock, lastAck, 4160, 0, res->ai_addr, (socklen_t*) sizeof (res->ai_addr)); // wait for ack
+			firstpacket=0;
+			j++;
+		}
+		else
+		{
+			if(lastAck->window > 0 && lastAck->seqNum < ) // if slots available in window
+			{
+				producePacket(fichier,&bufferPackets[j],current);
+				sendto(sock, &bufferPackets[j], (8+bufferPackets[j].length)*8 , 0, res->ai_addr, sizeof (res->ai_addr));
+				j++;
+			}
+			else
+			{
+				recvfrom(sock, lastAck, 4160, 0, res->ai_addr, (socklen_t*) sizeof (res->ai_addr));
+				j=lastAck->seqNum%32;
+			}	
+		}
 	}
+	
+	free(lastAck);
 	
 	// close file opened and socket fd
 	fclose(fichier);
 	close(sock);
 	
-	
 }
-
-
-
