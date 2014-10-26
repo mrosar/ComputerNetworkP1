@@ -156,7 +156,7 @@ int main(int argc, char *argv[])
 	
 	int *current = (int*) malloc(sizeof(int));
 	*current = 1;
-	
+
 	while(current>0)
 	{
 		struct packet *p = (struct packet*) malloc(sizeof(struct packet));
@@ -164,8 +164,6 @@ int main(int argc, char *argv[])
 		sendto(sock, p, (8+p->length)*8 , 0, res->ai_addr, sizeof (res->ai_addr));
 		free(p);
 	}
-
-	free(p);
 	
 	// close file opened and socket fd
 	fclose(fichier);
