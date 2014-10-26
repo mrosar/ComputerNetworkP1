@@ -16,7 +16,7 @@ uint32_t crc;
 } __attribute__((packed));
 
 
-int equal(char *string1, char *string2)
+int equal(char *string1, char *string2) // retourne 0 si deux tableaux de char sont égaux ou retourne 1 sinon
 {
 	int i = 0;
 	int stop =0;
@@ -51,7 +51,12 @@ int main(int argc, char *argv[])
 	int i;
 	uint16_t seq =1;
 	
-	for(i=1; i<argc;i++)
+	if(argc<3)
+	{
+		fprintf(stderr,"Number of argument is too short (minimum 2).");
+	}
+	
+	for(i=1; i<argc;i++) // boucle de traitement des arguments
 	{
 		if(equal(argv[i],"--file"))
 		{
@@ -83,7 +88,7 @@ int main(int argc, char *argv[])
 		}
 	}
 	
-	int sock;
+	
 	
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(struct addrinfo));
@@ -96,21 +101,23 @@ int main(int argc, char *argv[])
     hints.ai_addr = NULL;
     hints.ai_next = NULL;
 
-	int ip = getaddrinfo(NULL,hostname,&hints,&listAddr);
+	int ip = getaddrinfo(NULL,hostname,&hints,&listAddr); // possible ip adresses
+	int sock; // file descriptor of the socket
 
 	for(res = listAddr; res !=NULL; res = res->ai_next)
 	{
 		if ((sock = socket(res->ai_family, res->ai_socktype,
-            res->ai_protocol)) != -1)
+            res->ai_protocol)) != -1) // creation of the socket
             {
             	if (connect(sock, res->ai_addr, res->ai_addrlen) == 0)
             	{
             		// If we get there, connect succeded
+            		// The destination of the packets is set to res->ai_addr
             		break;
             	}
     		}
     	else {
-    	close(sock);
+    	close(sock); // else close the socket fd
     	}
 	}
 	
@@ -123,10 +130,9 @@ int main(int argc, char *argv[])
 	
 	FILE *fichier = fopen(filename,"r");
 	int current = 1;
-	int data;
-	int j=0;
 	
-	struct packet *p = malloc(sizeof(struct packet));
+	// new packet
+	struct packet *p = (struct packet*) malloc(sizeof(struct packet));
 	p->type = 1;
 	p->window = 0;
 	p->seqNum = seq;
@@ -134,26 +140,37 @@ int main(int argc, char *argv[])
 	
 	while (current>0)
 	{
-		if(j<512)
+		if(p->length<=512) // if packet contains empty slot(s), fill with a byte
 		{
 			current = fread(p->payload,sizeof(char),1,fichier);
 			p->length++;
-			j++;
 		}
-		else
+		else // else try to send a packet and create a new one to fill
 		{
-
-			sendto(sock, p, (8+p->length)*8 , 0, 
-       res->ai_addr, sizeof res->ai_addr);
-			// créer un nouveau
+			sendto(sock, p, (8+p->length)*8 , 0, res->ai_addr, sizeof (res->ai_addr));
+			free(p);
+			p = (struct packet*) malloc(sizeof(struct packet));
+			seq++;
+			p->type = 1;
+			p->window = 0;
+			p->seqNum = seq;
+			p->length = 0;
 		}
 	}
 	
-	if(j!=0)
+	if(p->length!=0) // if the last packet created before closing the file contains data, send it
 	{
-		// si le dernier packet n'est pas vide, envoyer le paquet final
+		sendto(sock, p, (8+p->length)*8 , 0, res->ai_addr, sizeof (res->ai_addr));
+		free(p);
 	}
+	else // else just free the memory allocated
+	{
+		free(p);
+	}
+	
+	// close file opened and socket fd
 	fclose(fichier);
+	close(sock);
 	
 	
 }
