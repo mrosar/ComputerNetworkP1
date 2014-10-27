@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/time.h>
+
 
 struct packet {
 uint8_t type : 3;
@@ -20,26 +22,20 @@ uint16_t seq =1;
 int equal(char *string1, char *string2) // retourne 0 si deux tableaux de char sont égaux ou retourne 1 sinon
 {
 	int i = 0;
-	int stop =0;
-	while(stop!=1)
+	
+	if(strlen(string1)!=strlen(string2)) return 1;
+	while(i<strlen(string1))
 	{
-		if(string1[i]!='\0' && string2[i]!='\0')
+		if(string1[i]!=string2[i])
 		{
-			if(string1[i]!=string2[i])
-			{
-				stop=1;
-			}
-			else
-			{
-				i++;
-			}
+			return 1;
 		}
-		else if(string1[i]=='\0' && string2[i]=='\0' && stop==0)
+		else
 		{
-			return 0;
+			i++;
 		}
 	}
-	return 1;
+	return 0;
 }
 
 void producePacket (FILE *fichier, struct packet *p, int *current)
@@ -157,9 +153,20 @@ int main(int argc, char *argv[])
 	int *current = (int*) malloc(sizeof(int));
 	*current = 1;
 	int firstpacket =1;
+	
 	struct packet bufferPackets[31]; // buffer filled with packets sent
 	struct packet *lastAck = (struct packet*) malloc(sizeof(struct packet)); // last ack received
+	
 	int j=0;
+	
+	fd_set readfds,writefds;
+	FD_ZERO(&readfds);
+	FD_ZERO(&writefds);
+	FD_SET(sock,&readfds);
+	FD_SET(sock,&writefds);
+	
+	int ready;
+	struct timeval tv;
 
 	while(current>0)
 	{
@@ -167,24 +174,38 @@ int main(int argc, char *argv[])
 		{
 			producePacket(fichier,&bufferPackets[j],current);
 			sendto(sock, &bufferPackets[j], (8+bufferPackets[j].length)*8 , 0, res->ai_addr, sizeof (res->ai_addr)); // send first packet
-			
 			recvfrom(sock, lastAck, 4160, 0, res->ai_addr, (socklen_t*) sizeof (res->ai_addr)); // wait for ack
 			firstpacket=0;
 			j++;
 		}
 		else
 		{
-			if(lastAck->window > 0 && lastAck->seqNum < ) // if slots available in window
+			tv.tv_sec = 0;
+    		tv.tv_usec = delay;
+			ready = select(sock+1,&readfds,&writefds,NULL,&tv);
+			
+			if(ready>0) // if slots available in window
 			{
-				producePacket(fichier,&bufferPackets[j],current);
+				if(FD_ISSET(sock, &readfds) || lastAck->window=0)
+				{
+					recvfrom(sock, lastAck, 4160, 0, res->ai_addr, (socklen_t*) sizeof (res->ai_addr));
+					j=lastAck->seqNum%32;
+				}
+				else if (FD_ISSET(sock, &writefds) && lastAck->window>0)
+				{
+					producePacket(fichier,&bufferPackets[j],current);
+					sendto(sock, &bufferPackets[j], (8+bufferPackets[j].length)*8 , 0, res->ai_addr, sizeof (res->ai_addr));
+					j++;
+				}
+			}
+			else if (ready==0)
+			{
 				sendto(sock, &bufferPackets[j], (8+bufferPackets[j].length)*8 , 0, res->ai_addr, sizeof (res->ai_addr));
-				j++;
 			}
 			else
 			{
-				recvfrom(sock, lastAck, 4160, 0, res->ai_addr, (socklen_t*) sizeof (res->ai_addr));
-				j=lastAck->seqNum%32;
-			}	
+				fprintf(stderr,"Select aborted");
+			}
 		}
 	}
 	
