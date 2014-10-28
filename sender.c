@@ -9,12 +9,10 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-
 #define NPACK 10
 #define PORT "9930"
 #define SRV_IP "127.0.0.1"
       
-//Packet structure
 struct packet {
 uint8_t type : 3;
 uint8_t window : 5;
@@ -45,7 +43,8 @@ int equal(char *string1, char *string2) // Return 0 if two char tabs are equals
 	return 0;
 }
 
-void producePacket (FILE *fichier, struct packet *p, int *current) // Fill the packet "p" with data contained in the file "fichier" from the pointer "current"
+// Fill the packet "p" with data contained in the file "fichier" from the pointer "current"
+void producePacket (FILE *fichier, struct packet *p, int *current)
 {
 	p->type = 1;
 	p->window = 0;
@@ -54,11 +53,9 @@ void producePacket (FILE *fichier, struct packet *p, int *current) // Fill the p
 	p->length = 0;
 	while (*current !=0 && p->length<=512)
 	{
-		if(p->length<=512) // if packet contains empty slot(s), fill with a byte
-		{
-			*current = fread((void *)&p->payload[p->length],sizeof(char),1,fichier);
+			// if packet contains empty slot(s), fill with a byte
+			*current = fread((void*)&p->payload[p->length],sizeof(char),1,fichier);
 			p->length++;
-		}
 	}
 	
 	// compute CRC
@@ -114,24 +111,25 @@ int main(int argc, char* argv[])
 		memset(&hints, 0, sizeof(struct addrinfo));
 		struct addrinfo *listAddr, *res;
 		hints.ai_family = AF_INET; // IPv4
-		hints.ai_socktype = SOCK_DGRAM;	// UDP
+		hints.ai_socktype = SOCK_DGRAM; // UDP
 		hints.ai_flags = AI_PASSIVE;
-		
-		// Connexion to the host "hostname" trough the port "port"
 	
-		int err = getaddrinfo(hostname,port,&hints,&listAddr); // Place the different possible adresses to connect to "hostname" in the structure "listaddr"
+		// Connexion to the host "hostname" trough the port "port"
+
+		int err = getaddrinfo(hostname,port,&hints,&listAddr);
+		// Place the different possible adresses to connect to "hostname" in the structure "listaddr"
 	
 		if (err!=0)
 		{
 			fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(err));
 		}
-		
 		int sock; // File descriptor of the socket
 
-		for(res = listAddr; res !=NULL; res = res->ai_next) // For each adress availaible, try to create and connect a socket
+		for(res = listAddr; res !=NULL; res = res->ai_next)
+		// For each adress availaible, try to create and connect
 		{
 			if ((sock = socket(res->ai_family, res->ai_socktype,
-		        res->ai_protocol)) != -1) // creation of the socket
+		        res->ai_protocol)) != -1) // Creation of the socket
 		        {
 		        	if (connect(sock, res->ai_addr, res->ai_addrlen) == 0)
 		        	{
@@ -148,28 +146,27 @@ int main(int argc, char* argv[])
 		// Connection succeded
 		
 		FILE *fichier = fopen(filename,"r"); // File "filename" opened in reading mode (r)
-	
-		int *current = (int*) malloc(sizeof(int));
-		*current = 1;
+		
+		int *current = malloc(sizeof(int));
+		*current =1;
 
-    	struct packet *bufferPackets = (struct packet*) malloc(31*sizeof(struct packet));
-    	
-    	for(i=0;i<NPACK;i++)
-    	{
-    		producePacket(fichier,&bufferPackets[i],current); // Put data from file inside packets
-    	}
-    	
-/*    	for(i=0;i<NPACK;i++)*/
-/*    	{*/
-/*    		printf("Buffer packet n°%d :\n %s \n",i,bufferPackets[i].payload);*/
-/*    	}*/
-
-        for (i=0; i<NPACK; i++) {
-          printf("Sending packet %d\n", i);
-          sendto(sock,(void*) &bufferPackets[i],520, 0, res->ai_addr,(socklen_t) res->ai_addrlen); // Send packets
+		struct packet *bufferPackets = (struct packet*) malloc(31*sizeof(struct packet));
+		
+		for (i=0; i<NPACK; i++) {
+          producePacket(fichier, &bufferPackets[i], current); // Put data from file inside packets
         }
         
-        // Close file descriptors, socket and free memory allocated
+/*        for (i=0; i<NPACK; i++) {*/
+/*			printf("Data contained in packet n°%d :\n %s",i,bufferPackets[i].payload);*/
+/*        }*/
+        
+        for (i=0; i<NPACK; i++) {
+          printf("Sending packet %d\n", i);
+          sendto(sock, (void*)&bufferPackets[i], 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
+        }
+        
+         // Close file descriptors, socket and free memory allocated
+        
         close(sock);
         free(bufferPackets);
         free(current);
