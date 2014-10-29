@@ -26,7 +26,7 @@ char payload[512];
 uint32_t crc;
 } __attribute__((packed));
 
-uint16_t seq =1; // Sequential number for packets sent
+uint16_t seq =0; // Sequential number for packets sent
 
 int equal(char *string1, char *string2) // Return 0 if two char tabs are equals
 {
@@ -52,9 +52,9 @@ void producePacket (FILE *fichier, struct packet *p, int *current)
 {
 	p->type = 1;
 	p->window = 0;
-	p->seqNum = seq;
+	p->seqNum = (uint8_t) seq;
 	seq++;
-	p->length = 0;
+	p->length = (uint8_t) 0;
 	while (*current !=0 && p->length<512)
 	{
 			// if packet contains empty slot(s), fill with a byte
@@ -77,7 +77,7 @@ int main(int argc, char* argv[])
 		char *next;
 		char *port=PORT;
         int i=0;
-        int sber=0,splr=0,delay=100;
+        int sber=0,splr=0,delay=1000;
     
     /*	if(argc<3)*/
 /*	{*/
@@ -160,20 +160,88 @@ int main(int argc, char* argv[])
 		*current =1;
 
 		struct packet *bufferPackets = (struct packet*) malloc(31*sizeof(struct packet));
+		struct packet *lastAck = (struct packet*) malloc(sizeof(struct packet)); // last ack received
 		
-/*		for (i=0; i<NPACK; i++) {*/
-/*          producePacket(fichier, &bufferPackets[i], current); // Put data from file inside packets*/
-/*        }*/
+		for(i=0;i<31;i++)
+		{
+			bufferPackets[i].seqNum=0;
+		}
         
-/*        for (i=0; i<NPACK; i++) {*/
-/*			printf("Data contained in packet n°%d :\n %s",i,bufferPackets[i].payload);*/
-/*        }*/
+        fd_set readfds,writefds;
+	
+		int ready,firstPacket=1;
+		int last=1;
+		struct timeval tv;
+		i=0;
         
-        while(*current!=0) {
-        	producePacket(fichier, &bufferPackets[i], current);
-          printf("Sending packet %d\n", i);
-          sendto(sock, (void*)&bufferPackets[i], 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
-          i++;
+        while(*current!=0 || last==0) {
+        
+		    if (firstPacket==1) // first packet "probe"
+			{
+				producePacket(fichier,&bufferPackets[i],current);
+				printf("Waiting for first packet\n");
+				fflush(stdout);
+				printf("Sending packet %d\n", i);
+      			err = sendto(sock, (void*)&bufferPackets[i], 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
+      			if (err ==-1)
+			 	{
+			 	fprintf(stderr, "Sendto failed");
+			 	}
+				err = recvfrom(sock, lastAck, 520, 0, res->ai_addr,(socklen_t * __restrict__) &res->ai_addrlen);
+				//printf("Ack number %d received\n",lastAck->seqNum);
+				if (err ==-1)
+				 {
+				 	fprintf(stderr, "Recvfrom failed");
+				 }
+
+				firstPacket=0;
+				i=(i+1)%32;
+			}
+			else
+			{
+		    	tv.tv_sec = 0;
+				tv.tv_usec = delay;
+				
+				FD_ZERO(&readfds);
+				FD_ZERO(&writefds);
+				FD_SET(sock,&readfds);
+				FD_SET(sock,&writefds);
+
+				ready = select(sock+1,&readfds,&writefds,NULL,&tv);
+				
+				if(ready>0)
+				{
+					if(FD_ISSET(sock,&readfds))
+					{
+						err = recvfrom(sock, lastAck, 520, 0, res->ai_addr,(socklen_t * __restrict__) &res->ai_addrlen);
+						//printf("Ack number %d received\n",lastAck->seqNum);
+						if (err ==-1)
+						 {
+						 	fprintf(stderr, "Recvfrom failed");
+						 }
+					}
+					else if (FD_ISSET(sock, &writefds) && current!=0)
+					{
+		    			producePacket(fichier, &bufferPackets[i], current);
+		    			if(current == 0)
+		    			{
+							last=0;
+							printf("Last ack to be received");
+		    			}
+						printf("Sending packet %d\n", i);
+		      			err = sendto(sock, (void*)&bufferPackets[i], 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
+		      			if (err ==-1)
+					 	{
+					 		fprintf(stderr, "Sendto failed");
+					 	}
+		      			i=(i+1)%32;
+					}
+					else 
+					{
+					fprintf(stderr,"Select aborted");
+					}
+				}
+			}
         }
         
          // Close file descriptors, socket and free memory allocated

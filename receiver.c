@@ -8,6 +8,7 @@
 #include <sys/time.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <errno.h>
 
 #define NPACK 10
 #define PORT "9930"
@@ -48,49 +49,27 @@ int equal(char *string1, char *string2) // retourne 0 si deux tableaux de char s
 }
 
 // Returns 0 if the "index" in argument fits inside the window ("upperBound" and "lowerBound")
-int insideWindow(int lowerBound, int upperBound, int index)
+int insideWindow(struct packet *bufferPackets, int nextPack, int seqNum)
 {
-	if(lowerBound > upperBound)
+	if(seqNum>nextPack+31)
 	{
-		if((index >=lowerBound && index <= 31) || (index >= 0 && index <= upperBound))
-		{
-			return 0;
-		}
-		else return 1;
+		return 1;
 	}
-	else
+	else if(seqNum==bufferPackets[seqNum%32].seqNum)
 	{
-		if(index >= lowerBound && index <=upperBound)
-		{
-		return 0;
-		}
-		else return 1;
+		return 1;
 	}
+	return 0;
 }
 
 // Returns the number of first packet off sequence (by seqNum), which is the number of the next packet the receiver needs to have
-int nextPacketInSeq (int lowerBound, int upperBound, struct packet buffer[])
+int nextPacketInSeq (int previousPack, struct packet buffer[])
 {
-	int i=lowerBound;;
-	if( lowerBound < upperBound)
-	{
-		while ( i<=upperBound)
-		{	
-			if(buffer[i].seqNum == buffer[(i+1)%32].seqNum+1)
-			i=(i+1)%32;
-			else
-			return (i+1)%32;
-		}
-	}
-	else
-	{
-		while ( (i<=31 && i>=upperBound) || (i>=0 && i<=lowerBound ))
-		{	
-			if(buffer[i].seqNum == buffer[(i+1)%32].seqNum+1)
-			i=(i+1)%32;
-			else
-			return (i+1)%32;
-		}
+	int i=previousPack;
+	while ( i<previousPack+32)
+	{	
+		if(buffer[i%32].seqNum+1 != buffer[(i+1)%32].seqNum)
+		return buffer[i%32].seqNum+1;
 	}
 	return -1;
 }
@@ -100,14 +79,10 @@ void producePacket (struct packet *p, int window, int nextPack)
 {
 	p->type = 0;
 	p->window = window;
-	p->seqNum = nextPack;
-	p->length = 512;
-	int i;
-	for(i=0;i<512;i++)
-	{
-		// if packet contains empty slot(s), fill with a byte
-		p->payload[i]='\0';
-	}
+	p->seqNum = (uint8_t) nextPack;
+	printf("SeqNum = %d\n",p->seqNum);
+	p->length =(uint16_t) 1;
+	p->payload[0]='\0';
 	
 	// compute CRC
 }
@@ -134,44 +109,43 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
     char *hostname=SRV_IP;
     char *next;
 	char *port=PORT;
-	int i;
 	char *filename="test2.txt";
 
 	struct addrinfo hints; // Filter of adresses
-		memset(&hints, 0, sizeof(struct addrinfo));
-		struct addrinfo *listAddr, *res;
-		hints.ai_family = AF_INET; // IPv4
-		hints.ai_socktype = SOCK_DGRAM; // UDP
-		hints.ai_flags = AI_PASSIVE;
-	
-		// Connexion to the host "hostname" trough the port "port"
+	memset(&hints, 0, sizeof(struct addrinfo));
+	struct addrinfo *listAddr, *res;
+	hints.ai_family = AF_INET; // IPv4
+	hints.ai_socktype = SOCK_DGRAM; // UDP
+	hints.ai_flags = AI_PASSIVE;
 
-		int err = getaddrinfo(hostname,port,&hints,&listAddr);
-		// Place the different possible adresses to connect to "hostname" in the structure "listaddr"
-	
-		if (err!=0)
-		{
-			fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(err));
-		}
-		int sock; // File descriptor of the socket
+	// Connexion to the host "hostname" trough the port "port"
 
-		for(res = listAddr; res !=NULL; res = res->ai_next)
-		// For each adress availaible, try to create and connect
-		{
-			if ((sock = socket(res->ai_family, res->ai_socktype,
-		        res->ai_protocol)) != -1) // Creation of the socket
-		        {
-		        	if (bind(sock, res->ai_addr, res->ai_addrlen) == 0)
-		        	{
-		        		// If we get there, connect succeded
-		        		// The destination of the packets is set to res->ai_addr
-		        		break;
-		        	}
-				}
-			else {
-			close(sock); // else close the socket fd
+	int err = getaddrinfo(hostname,port,&hints,&listAddr);
+	// Place the different possible adresses to connect to "hostname" in the structure "listaddr"
+
+	if (err!=0)
+	{
+		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(err));
+	}
+	int sock; // File descriptor of the socket
+
+	for(res = listAddr; res !=NULL; res = res->ai_next)
+	// For each adress availaible, try to create and connect
+	{
+		if ((sock = socket(res->ai_family, res->ai_socktype,
+	        res->ai_protocol)) != -1) // Creation of the socket
+	        {
+	        	if (bind(sock, res->ai_addr, res->ai_addrlen) == 0)
+	        	{
+	        		// If we get there, connect succeded
+	        		// The destination of the packets is set to res->ai_addr
+	        		break;
+	        	}
 			}
+		else {
+		close(sock); // else close the socket fd
 		}
+	}
 		
 		// Connection succeded
 	
@@ -182,20 +156,59 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 	struct packet *lastPacket = (struct packet*) malloc(sizeof(struct packet)); // last packet received
 	
 	int last=0;
+	
+	window=31;
+	int nextPack = 0;
+
+	int i;
+	for(i=0;i<31;i++)
+	{
+		bufferPackets[i].seqNum=0;
+	}
+	i=0;
 
     struct sockaddr_in *address = (struct sockaddr_in*)res->ai_addr;
 	
 	while(last==0) {
-	     recvfrom(sock, (void*)&bufferPackets[i], 520, 0, res->ai_addr,(socklen_t * __restrict__) &res->ai_addrlen);
-	     if(bufferPackets[i].length!=512) last=1;
-	     i++;
-	     printf("Received packet from %s:%d\n", inet_ntoa(address->sin_addr), htons(address->sin_port));
+	    err = recvfrom(sock, lastPacket, 520, 0, res->ai_addr,(socklen_t * __restrict__) &res->ai_addrlen);
+	    if (err ==-1)
+	    {
+	    	fprintf(stderr, "Recvfrom failed");
+	    }
+	    
+	    //printf("Received packet from %s:%d\n", inet_ntoa(address->sin_addr), htons(address->sin_port));
+	    //fflush(stdout);
+	     
+	    if(nextPack == lastPacket->seqNum)
+		{
+			bufferPackets[nextPack%32]=*lastPacket;
+			if(bufferPackets[nextPack%32].length!=512) last=1;
+			int writeFrom=nextPack;
+			nextPack=nextPacketInSeq(nextPack,bufferPackets);
+			if (nextPack == -1)
+			{
+				fprintf(stderr, "NextPack returned -1");
+			}
+			printf("Next pack (coté receiver) : %d\n",nextPack);
+			producePacket(lastAck,window,nextPack);
+			printf("Last Ack (coté receiver) : %d\n",lastAck->seqNum);
+			err = sendto(sock, (void*)&lastAck, 520 , 0, res->ai_addr, (socklen_t)res->ai_addrlen);
+			if (err ==-1)
+	     	{
+	     		fprintf(stderr, "Sendto failed");
+	     	}
+			int written = writeData(fichier,bufferPackets,writeFrom,nextPack);
+			window = window+nextPack-writeFrom;
+		}
+	    else if (insideWindow(bufferPackets,nextPack,lastPacket->seqNum))
+		{
+			sendto(sock, lastAck, 520 , 0, res->ai_addr, sizeof (res->ai_addr));
+			bufferPackets[(lastPacket->seqNum)%32]=*lastPacket;
+		}
 	}
 	
-	int r = writeData(fichier,bufferPackets,0,i);
-	
 	// close file opened and socket fd
-	fclose(fichier);	
+	fclose(fichier);
 	free(lastAck);
 	close(sock);
 	free(bufferPackets);
