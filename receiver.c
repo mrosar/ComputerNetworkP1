@@ -13,6 +13,10 @@
 #define PORT "9930"
 #define SRV_IP "127.0.0.1"
 
+// fait : gestion des arguments, création et remplissage des ack
+
+// TODO : renvoyer les ack, écrire ou placer les packets reçus dans un buffer s'ils sont hors séquence mais rentrent dans la fenetre
+
 struct packet {
 uint8_t type : 3;
 uint8_t window : 5;
@@ -98,12 +102,11 @@ void producePacket (struct packet *p, int window, int nextPack)
 	p->window = window;
 	p->seqNum = nextPack;
 	p->length = 512;
-	int i=0;
-	while(i<512)
+	int i;
+	for(i=0;i<512;i++)
 	{
 		// if packet contains empty slot(s), fill with a byte
 		p->payload[i]='\0';
-		i++;
 	}
 	
 	// compute CRC
@@ -177,15 +180,19 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 	struct packet *bufferPackets = (struct packet*) malloc(31*sizeof(struct packet)); // buffer filled with packets sent
 	struct packet *lastAck = (struct packet*) malloc(sizeof(struct packet)); // last ack sent
 	struct packet *lastPacket = (struct packet*) malloc(sizeof(struct packet)); // last packet received
+	
+	int last=0;
 
     struct sockaddr_in *address = (struct sockaddr_in*)res->ai_addr;
 	
-	for (i=0; i<NPACK; i++) {
+	while(last==0) {
 	     recvfrom(sock, (void*)&bufferPackets[i], 520, 0, res->ai_addr,(socklen_t * __restrict__) &res->ai_addrlen);
+	     if(bufferPackets[i].length!=512) last=1;
+	     i++;
 	     printf("Received packet from %s:%d\n", inet_ntoa(address->sin_addr), htons(address->sin_port));
 	}
 	
-	int r = writeData(fichier,bufferPackets,0,9);
+	int r = writeData(fichier,bufferPackets,0,i);
 	
 	// close file opened and socket fd
 	fclose(fichier);	

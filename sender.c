@@ -12,6 +12,10 @@
 #define NPACK 10
 #define PORT "9930"
 #define SRV_IP "127.0.0.1"
+
+// fait : créer les packets avec les données, récupérer les arguments, créer le socket et le connecter, envoyer les packets
+
+// TODO : gérer le retour des ack, et de fait le renvoi/ l'attente du sender, ajouter les pertes/corruptions de packets, code CRC
       
 struct packet {
 uint8_t type : 3;
@@ -51,11 +55,16 @@ void producePacket (FILE *fichier, struct packet *p, int *current)
 	p->seqNum = seq;
 	seq++;
 	p->length = 0;
-	while (*current !=0 && p->length<=512)
+	while (*current !=0 && p->length<512)
 	{
 			// if packet contains empty slot(s), fill with a byte
 			*current = fread((void*)&p->payload[p->length],sizeof(char),1,fichier);
 			p->length++;
+	}
+	if(p->length !=512)
+	{
+		p->length--;
+		printf("Last packet : length = %d\n",p->length);
 	}
 	
 	// compute CRC
@@ -67,7 +76,7 @@ int main(int argc, char* argv[])
       	char *hostname=SRV_IP;
 		char *next;
 		char *port=PORT;
-        int i;
+        int i=0;
         int sber=0,splr=0,delay=100;
     
     /*	if(argc<3)*/
@@ -152,17 +161,19 @@ int main(int argc, char* argv[])
 
 		struct packet *bufferPackets = (struct packet*) malloc(31*sizeof(struct packet));
 		
-		for (i=0; i<NPACK; i++) {
-          producePacket(fichier, &bufferPackets[i], current); // Put data from file inside packets
-        }
+/*		for (i=0; i<NPACK; i++) {*/
+/*          producePacket(fichier, &bufferPackets[i], current); // Put data from file inside packets*/
+/*        }*/
         
 /*        for (i=0; i<NPACK; i++) {*/
 /*			printf("Data contained in packet n°%d :\n %s",i,bufferPackets[i].payload);*/
 /*        }*/
         
-        for (i=0; i<NPACK; i++) {
+        while(*current!=0) {
+        	producePacket(fichier, &bufferPackets[i], current);
           printf("Sending packet %d\n", i);
           sendto(sock, (void*)&bufferPackets[i], 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
+          i++;
         }
         
          // Close file descriptors, socket and free memory allocated
