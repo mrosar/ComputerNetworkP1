@@ -69,7 +69,10 @@ int nextPacketInSeq (int previousPack, struct packet buffer[])
 	while ( i<previousPack+32)
 	{	
 		if(buffer[i%32].seqNum+1 != buffer[(i+1)%32].seqNum)
-		return buffer[i%32].seqNum+1;
+		{
+			return buffer[i%32].seqNum+1;
+		}
+		i++;
 	}
 	return -1;
 }
@@ -80,7 +83,7 @@ void producePacket (struct packet *p, int window, int nextPack)
 	p->type = 0;
 	p->window = window;
 	p->seqNum = (uint8_t) nextPack;
-	printf("SeqNum = %d\n",p->seqNum);
+	//printf("SeqNum = %d\n",p->seqNum);
 	p->length =(uint16_t) 1;
 	p->payload[0]='\0';
 	
@@ -90,17 +93,14 @@ void producePacket (struct packet *p, int window, int nextPack)
 // Write data inside the file "filename" from the "writeFrom"-th packet till the "end"-th packet from the structure "buffer"
 int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 {
-    int i, j;
-    for (i = 0; i<end; i++) {
-        if (i >= writeFrom) {
-            j = 0;
-            for (j = 0; j<buffer->length; j++) {
-                fputc(buffer->payload[j], fileName);
-            }
+	int i,j,err;
+    for (i = writeFrom; i<end; i++) {
+        for (j = 0; j<buffer->length; j++) {
+            err = fputc(buffer[i%32].payload[j], fileName);
+            if(err<0) break;
         }
-        buffer++;
+        if(err<0) break;
     }
-
     return 0;
 }
 
@@ -176,8 +176,8 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 	    	fprintf(stderr, "Recvfrom failed");
 	    }
 	    
-	    //printf("Received packet from %s:%d\n", inet_ntoa(address->sin_addr), htons(address->sin_port));
-	    //fflush(stdout);
+/*	    printf("Received packet n°%d from %s:%d\n",lastPacket->seqNum, inet_ntoa(address->sin_addr), htons(address->sin_port));*/
+/*	    fflush(stdout);*/
 	     
 	    if(nextPack == lastPacket->seqNum)
 		{
@@ -189,9 +189,9 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 			{
 				fprintf(stderr, "NextPack returned -1");
 			}
-			printf("Next pack (coté receiver) : %d\n",nextPack);
+			//printf("Next pack (coté receiver) : %d\n",nextPack);
 			producePacket(lastAck,window,nextPack);
-			printf("Last Ack (coté receiver) : %d\n",lastAck->seqNum);
+			//printf("Last Ack (coté receiver) : %d\n",lastAck->seqNum);
 			err = sendto(sock, (void*)&lastAck, 520 , 0, res->ai_addr, (socklen_t)res->ai_addrlen);
 			if (err ==-1)
 	     	{
@@ -209,9 +209,7 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 	
 	// close file opened and socket fd
 	fclose(fichier);
-	free(lastAck);
 	close(sock);
-	free(bufferPackets);
 	free(lastPacket);
     freeaddrinfo(listAddr);
     return 0;

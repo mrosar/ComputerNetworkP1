@@ -161,11 +161,6 @@ int main(int argc, char* argv[])
 
 		struct packet *bufferPackets = (struct packet*) malloc(31*sizeof(struct packet));
 		struct packet *lastAck = (struct packet*) malloc(sizeof(struct packet)); // last ack received
-		
-		for(i=0;i<31;i++)
-		{
-			bufferPackets[i].seqNum=0;
-		}
         
         fd_set readfds,writefds;
 	
@@ -174,14 +169,14 @@ int main(int argc, char* argv[])
 		struct timeval tv;
 		i=0;
         
-        while(*current!=0 || last==0) {
+        while(*current!=0) {
         
 		    if (firstPacket==1) // first packet "probe"
 			{
 				producePacket(fichier,&bufferPackets[i],current);
-				printf("Waiting for first packet\n");
-				fflush(stdout);
-				printf("Sending packet %d\n", i);
+				//printf("Waiting for first packet\n");
+				//fflush(stdout);
+				//printf("Sending packet %d\n", i);
       			err = sendto(sock, (void*)&bufferPackets[i], 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
       			if (err ==-1)
 			 	{
@@ -196,6 +191,15 @@ int main(int argc, char* argv[])
 
 				firstPacket=0;
 				i=(i+1)%32;
+			}
+			else if(last==0)
+			{
+				err = recvfrom(sock, lastAck, 520, 0, res->ai_addr,(socklen_t * __restrict__) &res->ai_addrlen);
+						//printf("Ack number %d received\n",lastAck->seqNum);
+				if (err ==-1)
+				{
+					fprintf(stderr, "Recvfrom failed");
+				}
 			}
 			else
 			{
@@ -223,12 +227,12 @@ int main(int argc, char* argv[])
 					else if (FD_ISSET(sock, &writefds) && current!=0)
 					{
 		    			producePacket(fichier, &bufferPackets[i], current);
-		    			if(current == 0)
+		    			if(*current == 0)
 		    			{
 							last=0;
-							printf("Last ack to be received");
+							//printf("Last ack to be received");
 		    			}
-						printf("Sending packet %d\n", i);
+						//printf("Sending packet %d with data : \n %s", i,bufferPackets[i].payload);
 		      			err = sendto(sock, (void*)&bufferPackets[i], 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
 		      			if (err ==-1)
 					 	{
@@ -247,8 +251,8 @@ int main(int argc, char* argv[])
          // Close file descriptors, socket and free memory allocated
         
         close(sock);
-        free(bufferPackets);
         free(current);
         fclose(fichier);
+
         return 0;
       }
