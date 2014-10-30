@@ -93,6 +93,7 @@ struct packet fun_sber(struct packet *p1){
     struct packet newPacket;
     newPacket.type = p1->type;
     newPacket.window = p1->window;
+    newPacket.length = p1->length;
     newPacket.seqNum = p1->seqNum;
     newPacket.crc = p1->crc;
     int i;
@@ -128,19 +129,19 @@ int equal(char *string1, char *string2) // Return 0 if two char tabs are equals
 {
 	int i = 0;
 	
-	if(strlen(string1)!=strlen(string2)) return 1;
+	if(strlen(string1)!=strlen(string2)) return 0;
 	while(i<strlen(string1))
 	{
 		if(string1[i]!=string2[i])
 		{
-			return 1;
+			return 0;
 		}
 		else
 		{
 			i++;
 		}
 	}
-	return 0;
+	return 1;
 }
 
 // Fill the packet "p" with data contained in the file "fichier" from the pointer "current"
@@ -187,9 +188,12 @@ int main(int argc, char* argv[])
 	
 	for(i=1; i<argc;i++) // Loop used to get the arguments given at the call
 	{
+		printf("Arg %d : %s\n",i,argv[i]);
 		if(equal(argv[i],"--file"))
 		{
+			printf("Arg %d : %s\n",i,argv[i]);
 			i++;
+			printf("Arg %d : %s\n",i,argv[i]);
 			filename = argv[i];
 		}
 		else if(equal(argv[i],"--sber"))
@@ -257,6 +261,11 @@ int main(int argc, char* argv[])
 		
 		FILE *fichier = fopen(filename,"r"); // File "filename" opened in reading mode (r)
 		
+		if(fichier ==NULL)
+		{
+			fprintf(stderr,"Error on file opening");
+		}
+		
 		int current=1;
 
 		struct packet *bufferPackets = (struct packet*) calloc(32,sizeof(struct packet));
@@ -275,17 +284,22 @@ int main(int argc, char* argv[])
 			if(firstPacket==1) // first packet "probe"
 			{
 				bufferPackets[i]=producePacket(fichier, bufferPackets[i], &current);
-				if(random()%100<=sber)
+				if(random()%1000<=sber)
 				{
 					toSend = fun_sber(&bufferPackets[i]);
 				}
 				else toSend = bufferPackets[i];
-
-	      		err = sendto(sock, (void*)&toSend, 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
+				
+				if(random()%100>splr)
+				{
+	      			err = sendto(sock, (void*)&toSend, 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
+	      		}
+	      		else err=0;
       			if (err ==-1)
 			 	{
 			 		fprintf(stderr, "Sendto failed");
 			 	}
+			 	firstPacket=0;
       			i=(i+1)%32;
 			}
 			if(last!=0)
@@ -305,7 +319,6 @@ int main(int argc, char* argv[])
 					if(FD_ISSET(sock,&readfds))
 					{
 						err = recvfrom(sock, lastAck, 520, 0, res->ai_addr,(socklen_t * __restrict__) &res->ai_addrlen);
-						//printf("Ack number %d received\n",lastAck->seqNum);
 						if (err ==-1)
 						 {
 						 	fprintf(stderr, "Recvfrom failed");
@@ -319,14 +332,18 @@ int main(int argc, char* argv[])
 							toSend = fun_sber(&bufferPackets[i]);
 						}
 						else toSend = bufferPackets[i];
+						
 						if(current == 0)
 						{
 							last=0;
-							//printf("Last ack to be received");
 						}
-						//printf("Data packet %d :\n %s\n",bufferPackets[i].seqNum, bufferPackets[i].payload);
-						//printf("Sending packet %d with data : \n %s", i,bufferPackets[i].payload);
-			  			err = sendto(sock, (void*)&toSend, 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
+
+			  			if(random()%100>splr)
+						{
+				  			err = sendto(sock, (void*)&toSend, 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
+				  		}
+				  		else err=0;
+				  		
 			  			if (err ==-1)
 					 	{
 					 		fprintf(stderr, "Sendto failed");
@@ -341,7 +358,18 @@ int main(int argc, char* argv[])
 							toSend = fun_sber(&bufferPackets[i]);
 						}
 						else toSend = bufferPackets[i];
-						err = sendto(sock, (void*)&toSend, 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
+
+			  			if(random()%100>splr)
+						{
+				  			err = sendto(sock, (void*)&toSend, 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
+				  		}
+				  		else err=0;
+				  		
+				  		if (err ==-1)
+					 	{
+					 		fprintf(stderr, "Sendto failed");
+					 	}
+					 	i=(i+1)%32;
 					}
 					else 
 					{

@@ -131,7 +131,7 @@ int nextPacketInSeq (int previousPack, struct packet *buffer)
 		}
 		i++;
 	}
-	return -1;
+	return previousPack;
 }
 
 // Fill the ack packets with zeros, window size and number of the next packet required
@@ -163,6 +163,11 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 
   int main(int argc, char* argv[])
   {
+  	if(equal("ok","ok"))
+  	{
+  		printf("Equal is good");
+  	}
+  
     char *hostname=SRV_IP;
     char *next;
 	char *port=PORT;
@@ -207,6 +212,11 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 		// Connection succeded
 	
 	FILE *fichier = fopen(filename,"w");
+	
+	if(fichier ==NULL)
+	{
+		fprintf(stderr,"Error on file opening");
+	}
 
 	struct packet *bufferPackets = (struct packet*) calloc(32,sizeof(struct packet)); // buffer filled with packets sent
 	struct packet *lastAck = (struct packet*) calloc(1,sizeof(struct packet)); // last ack sent
@@ -242,9 +252,9 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 				//printf("Next pack : %d\n",nextPack);
 				//printf("Last packet SeqNum : %d\n",lastPacket.seqNum);
 				nextPack=nextPacketInSeq(nextPack,bufferPackets);
-				if (nextPack == -1)
+				if (nextPack == writeFrom)
 				{
-					fprintf(stderr, "NextPack returned -1");
+					fprintf(stderr, "NextPack returned a wrong result");
 				}
 				producePacket(lastAck,window,nextPack);
 
