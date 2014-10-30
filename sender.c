@@ -8,10 +8,7 @@
 #include <sys/time.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-
-#define NPACK 10
-#define PORT "9930"
-#define SRV_IP "127.0.0.1"
+#include <string.h>
 
 // fait : créer les packets avec les données, récupérer les arguments, créer le socket et le connecter, envoyer les packets, gérer le retour des ack, CRC
 
@@ -125,25 +122,6 @@ struct packet fun_sber(struct packet *p1){
     return newPacket;
 }
 
-int equal(char *string1, char *string2) // Return 0 if two char tabs are equals
-{
-	int i = 0;
-	
-	if(strlen(string1)!=strlen(string2)) return 0;
-	while(i<strlen(string1))
-	{
-		if(string1[i]!=string2[i])
-		{
-			return 0;
-		}
-		else
-		{
-			i++;
-		}
-	}
-	return 1;
-}
-
 // Fill the packet "p" with data contained in the file "fichier" from the pointer "current"
 struct packet producePacket (FILE *fichier, struct packet p, int *current)
 {
@@ -174,39 +152,37 @@ struct packet producePacket (FILE *fichier, struct packet p, int *current)
       
 int main(int argc, char* argv[])
 	{
-      	char *filename="test.txt";
-      	char *hostname=SRV_IP;
+      	char *filename;
+      	char *hostname;
 		char *next;
-		char *port=PORT;
+		char *port;
         int i=0;
         int sber=0,splr=0,delay=1000;
     
-    /*	if(argc<3)*/
-/*	{*/
-/*		fprintf(stderr,"Number of argument is too short (minimum 2).");*/
-/*	}*/
+    	if(argc<3)
+	{
+		fprintf(stderr,"Number of argument is too short (minimum 2 : hostname and port).");
+	}
 	
 	for(i=1; i<argc;i++) // Loop used to get the arguments given at the call
 	{
-		printf("Arg %d : %s\n",i,argv[i]);
-		if(equal(argv[i],"--file"))
+		if(strcmp(argv[i],"--file")==0)
 		{
-			printf("Arg %d : %s\n",i,argv[i]);
 			i++;
-			printf("Arg %d : %s\n",i,argv[i]);
 			filename = argv[i];
+			printf("Filename = %s\n",filename);
 		}
-		else if(equal(argv[i],"--sber"))
+		else if(strcmp(argv[i],"--sber")==0)
 		{
 			i++;
 			sber= strtol(argv[i],&next, 10);
 		}
-		else if(equal(argv[i],"--splr"))
+		else if(strcmp(argv[i],"--splr")==0)
 		{
 			i++;
 			splr=strtol(argv[i],&next, 10);
 		}
-		else if(equal(argv[i],"--delay"))
+		else if(strcmp(argv[i],"--delay")==0)
 		{
 			i++;
 			delay=strtol(argv[i],&next, 10);
@@ -324,14 +300,18 @@ int main(int argc, char* argv[])
 						 	fprintf(stderr, "Recvfrom failed");
 						 }
 					}
-					else if (FD_ISSET(sock, &writefds) && current!=0 && firstPacket!=1)
+					else if (FD_ISSET(sock, &writefds) && firstPacket!=1 && (bufferPackets[i].seqNum)<(lastAck->seqNum+32))
 					{
-						bufferPackets[i]=producePacket(fichier, bufferPackets[i], &current);
+						if(current!=0)
+						{
+							bufferPackets[i]=producePacket(fichier, bufferPackets[i], &current);
+						}
 						if(random()%100<=sber)
 						{
 							toSend = fun_sber(&bufferPackets[i]);
 						}
 						else toSend = bufferPackets[i];
+						i=(i+1)%32;
 						
 						if(current == 0)
 						{
@@ -348,7 +328,6 @@ int main(int argc, char* argv[])
 					 	{
 					 		fprintf(stderr, "Sendto failed");
 					 	}
-			  			i=(i+1)%32;
 					}
 					else if(ready==0)
 					{
@@ -371,10 +350,10 @@ int main(int argc, char* argv[])
 					 	}
 					 	i=(i+1)%32;
 					}
-					else 
-					{
-						fprintf(stderr,"Select aborted");
-					}
+				}
+				else 
+				{
+					fprintf(stderr,"Select aborted");
 				}
 			}
 			else

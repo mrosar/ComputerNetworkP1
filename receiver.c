@@ -9,10 +9,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <errno.h>
-
-#define NPACK 10
-#define PORT "9930"
-#define SRV_IP "127.0.0.1"
+#include <string.h>
 
 // fait : gestion des arguments, création et remplissage des ack
 
@@ -86,25 +83,6 @@ char payload[512];
 uint32_t crc;
 } __attribute__((packed));
 
-int equal(char *string1, char *string2) // retourne 0 si deux tableaux de char sont égaux ou retourne 1 sinon
-{
-	int i = 0;
-	
-	if(strlen(string1)!=strlen(string2)) return 1;
-	while(i<strlen(string1))
-	{
-		if(string1[i]!=string2[i])
-		{
-			return 1;
-		}
-		else
-		{
-			i++;
-		}
-	}
-	return 0;
-}
-
 // Returns 0 if the "index" in argument fits inside the window ("upperBound" and "lowerBound")
 int insideWindow(struct packet *bufferPackets, int nextPack, int seqNum)
 {
@@ -163,15 +141,28 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 
   int main(int argc, char* argv[])
   {
-  	if(equal("ok","ok"))
-  	{
-  		printf("Equal is good");
-  	}
-  
-    char *hostname=SRV_IP;
+    char *hostname;
     char *next;
-	char *port=PORT;
-	char *filename="test2.txt";
+	char *port;
+	char *filename;
+	int i;
+	
+	for(i=1; i<argc;i++) // Loop used to get the arguments given at the call
+	{
+		if(strcmp(argv[i],"--file")==0)
+		{
+			i++;
+			filename = argv[i];
+		}
+		else if(i==argc-2)
+		{
+			hostname = argv[i];
+		}
+		else if(i==argc-1)
+		{
+			port = argv[i];
+		}
+	}
 
 	struct addrinfo hints; // Filter of adresses
 	memset(&hints, 0, sizeof(struct addrinfo));
@@ -227,7 +218,7 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 	uint8_t window=31;
 	uint8_t nextPack = 0;
 	
-	int i,j;
+	int j;
 	for(i=0;i<31;i++)
 	{
 		bufferPackets[i].seqNum=0;
@@ -236,7 +227,7 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 	
 	while(last==0)
 	{
-		err = recvfrom(sock, &lastPacket, 520, 0, res->ai_addr,(socklen_t * __restrict__) &res->ai_addrlen);
+			err = recvfrom(sock, &lastPacket, 520, 0, res->ai_addr,(socklen_t * __restrict__) &res->ai_addrlen);
 			if (err ==-1)
 			{
 				fprintf(stderr, "Recvfrom failed");
