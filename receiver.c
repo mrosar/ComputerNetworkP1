@@ -232,8 +232,9 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 				fprintf(stderr, "Recvfrom failed");
 			}
 		if(lastPacket.length!=512) last=1;
+		int correctPacket = lastPacket.crc==crc32(0,&lastPacket,516);
 			
-		if(nextPack == lastPacket.seqNum && lastPacket.crc==crc32(0,&lastPacket,516))
+		if(nextPack == lastPacket.seqNum && correctPacket)
 			{
 				bufferPackets[nextPack%32]=lastPacket;
 				//printf("Data packet %d :\n %s\n",lastPacket.seqNum, lastPacket.payload);
@@ -256,7 +257,7 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 				int next = writeData(fichier,bufferPackets,writeFrom,nextPack);
 				window = window+nextPack-writeFrom;
 			}
-		else if (insideWindow(bufferPackets,nextPack,lastPacket.seqNum))
+		else if (insideWindow(bufferPackets,nextPack,lastPacket.seqNum) && correctPacket)
 		{
 			sendto(sock, lastAck, 520 , 0, res->ai_addr, sizeof (res->ai_addr));
 			bufferPackets[(lastPacket.seqNum)%32]=lastPacket;
