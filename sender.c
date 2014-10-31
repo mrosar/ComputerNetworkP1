@@ -9,10 +9,11 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <string.h>
+#include <time.h>
 
-// fait : créer les packets avec les données, récupérer les arguments, créer le socket et le connecter, envoyer les packets, gérer le retour des ack, CRC
+// fait : créer les packets avec les données, récupérer les arguments, créer le socket et le connecter, envoyer les packets, gérer le retour des ack, CRC, pertes/corruptions de packets
 
-// TODO : gérer le renvoi/ l'attente du sender, ajouter les pertes/corruptions de packets
+// TODO : gérer le renvoi/ l'attente du sender
 
 static uint32_t crc32_tab[] = {
     0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
@@ -149,6 +150,34 @@ struct packet producePacket (FILE *fichier, struct packet p, int *current)
 	p.crc = crc32(0,&p,516);
 	return p;
 }
+
+int lowestSeqNum(struct packet *buffer)
+{
+	int i;
+	int min=100000;
+	for(i=0;i<31;i++)
+	{
+		if(buffer[i].seqNum < min)
+		{
+			min = buffer[i].seqNum;
+		}
+	}
+	return min;
+}
+
+int highestSeqNum(struct packet *buffer)
+{
+	int i;
+	int max=-1;
+	for(i=0;i<31;i++)
+	{
+		if(buffer[i].seqNum > max)
+		{
+			max = buffer[i].seqNum;
+		}
+	}
+	return max;
+}
       
 int main(int argc, char* argv[])
 	{
@@ -158,44 +187,47 @@ int main(int argc, char* argv[])
 		char *port;
         int i=0;
         int sber=0,splr=0,delay=1000;
+        int window;
+        
+        srand(time(NULL));
     
     	if(argc<3)
-	{
-		fprintf(stderr,"Number of argument is too short (minimum 2 : hostname and port).");
-	}
+		{
+			fprintf(stderr,"Number of argument is too short (minimum 2 : hostname and port).");
+		}
 	
-	for(i=1; i<argc;i++) // Loop used to get the arguments given at the call
-	{
-		if(strcmp(argv[i],"--file")==0)
+		for(i=1; i<argc;i++) // Loop used to get the arguments given at the call
 		{
-			i++;
-			filename = argv[i];
-			printf("Filename = %s\n",filename);
+			if(strcmp(argv[i],"--file")==0)
+			{
+				i++;
+				filename = argv[i];
+				printf("Filename = %s\n",filename);
+			}
+			else if(strcmp(argv[i],"--sber")==0)
+			{
+				i++;
+				sber= strtol(argv[i],&next, 10);
+			}
+			else if(strcmp(argv[i],"--splr")==0)
+			{
+				i++;
+				splr=strtol(argv[i],&next, 10);
+			}
+			else if(strcmp(argv[i],"--delay")==0)
+			{
+				i++;
+				delay=strtol(argv[i],&next, 10);
+			}
+			else if(i==argc-2)
+			{
+				hostname = argv[i];
+			}
+			else if(i==argc-1)
+			{
+				port = argv[i];
+			}
 		}
-		else if(strcmp(argv[i],"--sber")==0)
-		{
-			i++;
-			sber= strtol(argv[i],&next, 10);
-		}
-		else if(strcmp(argv[i],"--splr")==0)
-		{
-			i++;
-			splr=strtol(argv[i],&next, 10);
-		}
-		else if(strcmp(argv[i],"--delay")==0)
-		{
-			i++;
-			delay=strtol(argv[i],&next, 10);
-		}
-		else if(i==argc-2)
-		{
-			hostname = argv[i];
-		}
-		else if(i==argc-1)
-		{
-			port = argv[i];
-		}
-	}
     
         struct addrinfo hints; // Filter of adresses
 		memset(&hints, 0, sizeof(struct addrinfo));
@@ -244,53 +276,30 @@ int main(int argc, char* argv[])
 		
 		int current=1;
 
-		struct packet *bufferPackets = (struct packet*) calloc(32,sizeof(struct packet));
+		struct packet *bufferPackets = (struct packet*) calloc(31,sizeof(struct packet));
 		struct packet *lastAck = (struct packet*) calloc(1,sizeof(struct packet)); // last ack received
 		struct packet toSend;
         
         fd_set readfds,writefds;
 	
-		int ready,firstPacket=1;
+		int ready,j;
 		int last=1;
 		struct timeval tv;
 		i=0;
 		
-		while(current!=0)
-		{
-			if(firstPacket==1) // first packet "probe"
-			{
-				bufferPackets[i]=producePacket(fichier, bufferPackets[i], &current);
-				if(random()%1000<=sber)
-				{
-					toSend = fun_sber(&bufferPackets[i]);
-				}
-				else toSend = bufferPackets[i];
-				
-				if(random()%100>splr)
-				{
-	      			err = sendto(sock, (void*)&toSend, 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
-	      		}
-	      		else err=0;
-      			if (err ==-1)
-			 	{
-			 		fprintf(stderr, "Sendto failed");
-			 	}
-			 	firstPacket=0;
-      			i=(i+1)%32;
-			}
-			if(last!=0)
-			{
+		while(current!=0 || last !=0)
+		{	
 				tv.tv_sec = 0;
 				tv.tv_usec = 500;
-			
+		
 				FD_ZERO(&readfds);
 				FD_ZERO(&writefds);
 				FD_SET(sock,&readfds);
 				FD_SET(sock,&writefds);
 
 				ready = select(sock+1,&readfds,&writefds,NULL,&tv);
-			
-				if(ready>0)
+		
+				if(ready>=0)
 				{
 					if(FD_ISSET(sock,&readfds))
 					{
@@ -299,26 +308,37 @@ int main(int argc, char* argv[])
 						 {
 						 	fprintf(stderr, "Recvfrom failed");
 						 }
-					}
-					else if (FD_ISSET(sock, &writefds) && firstPacket!=1 && (bufferPackets[i].seqNum)<(lastAck->seqNum+32))
-					{
-						if(current!=0)
-						{
-							bufferPackets[i]=producePacket(fichier, bufferPackets[i], &current);
-						}
-						if(random()%100<=sber)
-						{
-							toSend = fun_sber(&bufferPackets[i]);
-						}
-						else toSend = bufferPackets[i];
-						i=(i+1)%32;
-						
-						if(current == 0)
+						if(highestSeqNum(bufferPackets)==lastAck->seqNum-1 && current==0)
 						{
 							last=0;
 						}
+					}
+					else if (FD_ISSET(sock, &writefds))
+					{
+						if( lowestSeqNum(bufferPackets)==lastAck->seqNum && lowestSeqNum(bufferPackets)!=highestSeqNum(bufferPackets))
+						{
+							i=lastAck->seqNum%31;
+							printf("Value of i after reset : %d\n",i);
+						}
+						else if(current!=0)
+						{
+							bufferPackets[i]=producePacket(fichier, bufferPackets[i], &current);
+							printf("Packet seqNum = %d is produced\n",bufferPackets[i].seqNum);
+							if(current == 0)
+							{
+								last=0;
+							}
+						}
+						j =(int) (rand()%1000);
+						if(j<=sber)
+						{
+							toSend = fun_sber(&bufferPackets[i]);
+							printf("Packet seqNum = %d is corrupted\n",bufferPackets[i].seqNum);
+						}
+						else toSend = bufferPackets[i];
 
-			  			if(random()%100>splr)
+						j =(int) (rand()%100);
+			  			if(j>splr)
 						{
 				  			err = sendto(sock, (void*)&toSend, 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
 				  		}
@@ -328,17 +348,25 @@ int main(int argc, char* argv[])
 					 	{
 					 		fprintf(stderr, "Sendto failed");
 					 	}
+					 	else if(err ==0)
+					 	{
+					 		printf("Packet %d lost \n",bufferPackets[i].seqNum);
+					 	}
+					 	i=(i+1)%31;
 					}
 					else if(ready==0)
 					{
-						i=lastAck->seqNum%32;
-						if(random()%100<=sber)
+						i=lastAck->seqNum%31;
+						j =(int) (rand()%1000);
+						if(j<=sber)
 						{
 							toSend = fun_sber(&bufferPackets[i]);
+							printf("Packet seqNum = %d is corrupted\n",bufferPackets[i].seqNum);
 						}
 						else toSend = bufferPackets[i];
 
-			  			if(random()%100>splr)
+						j =(int) (rand()%100);
+			  			if(j>splr)
 						{
 				  			err = sendto(sock, (void*)&toSend, 520, 0, res->ai_addr,(socklen_t) res->ai_addrlen);
 				  		}
@@ -348,22 +376,20 @@ int main(int argc, char* argv[])
 					 	{
 					 		fprintf(stderr, "Sendto failed");
 					 	}
-					 	i=(i+1)%32;
+					 	else if(err ==0)
+					 	{
+					 		printf("Packet %d lost \n",bufferPackets[i].seqNum);
+					 	}
 					}
 				}
 				else 
 				{
 					fprintf(stderr,"Select aborted");
 				}
-			}
-			else
+			if(highestSeqNum(bufferPackets)!=lastAck->seqNum-1 && last==0)
 			{
-				err = recvfrom(sock, lastAck, 520, 0, res->ai_addr,(socklen_t * __restrict__) &res->ai_addrlen);
-						//printf("Ack number %d received\n",lastAck->seqNum);
-				if (err ==-1)
-				{
-					fprintf(stderr, "Recvfrom failed");
-				}
+				i=lastAck->seqNum%31;
+				last=1;
 			}
 		}
 		

@@ -11,9 +11,7 @@
 #include <errno.h>
 #include <string.h>
 
-// fait : gestion des arguments, création et remplissage des ack
-
-// TODO : renvoyer les ack, écrire ou placer les packets reçus dans un buffer s'ils sont hors séquence mais rentrent dans la fenetre
+// fait : gestion des arguments, création et remplissage des ack, renvoyer les ack, écrire ou placer les packets reçus dans un buffer s'ils sont hors séquence mais rentrent dans la fenetre
 
 static uint32_t crc32_tab[] = {
     0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
@@ -90,7 +88,7 @@ int insideWindow(struct packet *bufferPackets, int nextPack, int seqNum)
 	{
 		return 1;
 	}
-	else if(seqNum==bufferPackets[seqNum%32].seqNum)
+	else if(seqNum==bufferPackets[seqNum%31].seqNum)
 	{
 		return 1;
 	}
@@ -101,11 +99,11 @@ int insideWindow(struct packet *bufferPackets, int nextPack, int seqNum)
 int nextPacketInSeq (int previousPack, struct packet *buffer)
 {
 	int i=previousPack;
-	while ( i<previousPack+32)
+	while ( i<previousPack+31)
 	{	
-		if(buffer[i%32].seqNum+1 != buffer[(i+1)%32].seqNum)
+		if(buffer[i%31].seqNum+1 != buffer[(i+1)%31].seqNum)
 		{
-			return buffer[i%32].seqNum+1;
+			return buffer[i%31].seqNum+1;
 		}
 		i++;
 	}
@@ -129,8 +127,8 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 {
 	int i,j,err;
     for (i = writeFrom; i<end; i++) {
-        for (j = 0; j<buffer[i%32].length; j++) {
-            err = fputc(buffer[i%32].payload[j], fileName);
+        for (j = 0; j<buffer[i%31].length; j++) {
+            err = fputc(buffer[i%31].payload[j], fileName);
             if(err<0) break;
         }
 
@@ -209,7 +207,7 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 		fprintf(stderr,"Error on file opening");
 	}
 
-	struct packet *bufferPackets = (struct packet*) calloc(32,sizeof(struct packet)); // buffer filled with packets sent
+	struct packet *bufferPackets = (struct packet*) calloc(31,sizeof(struct packet)); // buffer filled with packets sent
 	struct packet *lastAck = (struct packet*) calloc(1,sizeof(struct packet)); // last ack sent
 	struct packet lastPacket; // last packet received
 	
@@ -232,41 +230,46 @@ int writeData (FILE *fileName, struct packet *buffer, int writeFrom, int end)
 			{
 				fprintf(stderr, "Recvfrom failed");
 			}
-		if(lastPacket.length!=512) last=1;
-		int correctPacket = lastPacket.crc==crc32(0,&lastPacket,516);
+			if(lastPacket.length!=512) last=1;
+			int correctPacket = lastPacket.crc==crc32(0,&lastPacket,516);
 			
-		if(nextPack == lastPacket.seqNum && correctPacket)
-			{
-				bufferPackets[nextPack%32]=lastPacket;
-				//printf("Data packet %d :\n %s\n",lastPacket.seqNum, lastPacket.payload);
-				int writeFrom=nextPack;
-				//printf("Next pack : %d\n",nextPack);
-				//printf("Last packet SeqNum : %d\n",lastPacket.seqNum);
-				nextPack=nextPacketInSeq(nextPack,bufferPackets);
-				if (nextPack == writeFrom)
+			if(nextPack == lastPacket.seqNum && correctPacket)
 				{
-					fprintf(stderr, "NextPack returned a wrong result");
+					bufferPackets[nextPack%31]=lastPacket;
+					//printf("Data packet %d :\n %s\n",lastPacket.seqNum, lastPacket.payload);
+					int writeFrom=nextPack;
+					//printf("Next pack : %d\n",nextPack);
+					//printf("Last packet SeqNum : %d\n",lastPacket.seqNum);
+					nextPack=nextPacketInSeq(nextPack,bufferPackets);
+					if (nextPack == writeFrom)
+					{
+						fprintf(stderr, "NextPack returned a wrong result");
+					}
+					producePacket(lastAck,window,nextPack);
+
+					err = sendto(sock, lastAck, 520 , 0, res->ai_addr, (socklen_t)res->ai_addrlen);
+					printf("Last ack seqNum = %d sent\n",lastAck->seqNum);
+					if (err ==-1)
+				 	{
+				 		fprintf(stderr, "Sendto failed");
+				 	}
+
+					int next = writeData(fichier,bufferPackets,writeFrom,nextPack);
+					window = window+nextPack-writeFrom;
 				}
-				producePacket(lastAck,window,nextPack);
-
-				err = sendto(sock, lastAck, 520 , 0, res->ai_addr, (socklen_t)res->ai_addrlen);
-				if (err ==-1)
-			 	{
-			 		fprintf(stderr, "Sendto failed");
-			 	}
-
-				int next = writeData(fichier,bufferPackets,writeFrom,nextPack);
-				window = window+nextPack-writeFrom;
+			else if (insideWindow(bufferPackets,nextPack,lastPacket.seqNum)==0 && correctPacket)
+			{
+				//printf("Next pack : %d\n",nextPack);
+				sendto(sock, lastAck, 520 , 0, res->ai_addr, sizeof (res->ai_addr));
+				printf("Last ack seqNum = %d sent\n",lastAck->seqNum);
+				bufferPackets[(lastPacket.seqNum)%31]=lastPacket;
+				printf("Last packet seqNum = %d stored into buffer\n",lastPacket.seqNum);
 			}
-		else if (insideWindow(bufferPackets,nextPack,lastPacket.seqNum) && correctPacket)
-		{
-			sendto(sock, lastAck, 520 , 0, res->ai_addr, sizeof (res->ai_addr));
-			bufferPackets[(lastPacket.seqNum)%32]=lastPacket;
-		}
-		else if (lastPacket.crc!=crc32(0,&lastPacket,516))
-		{
-			sendto(sock, lastAck, 520 , 0, res->ai_addr, sizeof (res->ai_addr));
-		}
+			else if (lastPacket.crc!=crc32(0,&lastPacket,516))
+			{
+				sendto(sock, lastAck, 520 , 0, res->ai_addr, sizeof (res->ai_addr));
+				printf("Last ack seqNum = %d sent\n",lastAck->seqNum);
+			}
 	}
 	// close file opened and socket fd
 	fclose(fichier);
